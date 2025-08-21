@@ -3,7 +3,7 @@ import csv
 
 # Jira credentials (hardcoded for now)
 EMAIL = "mukesh@sprinklr.com"
-API_TOKEN = "ATATT3xFfGF082-JvJW_Jof02KVRX3mqa6gWwKzkJaejqvhcGNfQC4ws00V-uxno9RORTwFG_JXXmiHssk2a_Tg-TQhzZefDk-_XRLM3XWVcIWe9NdvT7M52avgD_a0F2n4cPKMzQoXpJnVgldbwnBbAdq2oNUdMO04rAcjlxqqV-eEj3qU9rYQ=774C8366"
+API_TOKEN = "API Token"
 BASE_URL = "https://sprinklr.atlassian.net/rest/api/3"
 
 AUTH = (EMAIL, API_TOKEN)
