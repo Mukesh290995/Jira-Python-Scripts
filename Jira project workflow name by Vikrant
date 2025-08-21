@@ -2,9 +2,9 @@ import requests
 import csv
 
 # Jira credentials (hardcoded for now)
-EMAIL = "mukesh@sprinklr.com"
+EMAIL = "Email"
 API_TOKEN = "API Token"
-BASE_URL = "https://sprinklr.atlassian.net/rest/api/3"
+BASE_URL = "https://comp.atlassian.net/rest/api/3"
 
 AUTH = (EMAIL, API_TOKEN)
 HEADERS = {"Accept": "application/json"}
