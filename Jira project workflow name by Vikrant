@@ -1,0 +1,108 @@
+import requests
+import csv
+
+# Jira credentials (hardcoded for now)
+EMAIL = "mukesh@sprinklr.com"
+API_TOKEN = "ATATT3xFfGF082-JvJW_Jof02KVRX3mqa6gWwKzkJaejqvhcGNfQC4ws00V-uxno9RORTwFG_JXXmiHssk2a_Tg-TQhzZefDk-_XRLM3XWVcIWe9NdvT7M52avgD_a0F2n4cPKMzQoXpJnVgldbwnBbAdq2oNUdMO04rAcjlxqqV-eEj3qU9rYQ=774C8366"
+BASE_URL = "https://sprinklr.atlassian.net/rest/api/3"
+
+AUTH = (EMAIL, API_TOKEN)
+HEADERS = {"Accept": "application/json"}
+
+
+def get_projects():
+    """Fetch all Jira projects"""
+    url = f"{BASE_URL}/project"
+    response = requests.get(url, auth=AUTH, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+
+def get_project_workflow_scheme(project_id):
+    """Fetch workflow scheme for a project"""
+    url = f"{BASE_URL}/workflowscheme/project?projectId={project_id}"
+    response = requests.get(url, auth=AUTH, headers=HEADERS)
+    response.raise_for_status()
+    data = response.json()
+    if "values" in data and len(data["values"]) > 0:
+        return data["values"][0]["workflowScheme"]
+    return None
+
+
+def get_workflow_scheme_details(workflow_url):
+    """Fetch workflow scheme details from self URL"""
+    response = requests.get(workflow_url, auth=AUTH, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+
+def main():
+    projects = get_projects()
+
+    all_issue_types = set()
+    project_data = []
+
+    # First pass: gather all issue types across projects
+    for project in projects:
+        category = project.get("projectCategory", {}).get("name", "")
+        if category == "Active Release Projects":
+            project_id = project["id"]
+            project_key = project["key"]
+            project_name = project["name"]
+
+            workflow_scheme = get_project_workflow_scheme(project_id)
+            if workflow_scheme:
+                wf_name = workflow_scheme.get("name", "")
+                wf_self = workflow_scheme.get("self", "")
+
+                # Fetch detailed workflow scheme (issueTypes + mappings)
+                wf_details = get_workflow_scheme_details(wf_self)
+                default_wf = wf_details.get("defaultWorkflow", "")
+
+                issue_types = wf_details.get("issueTypes", {})
+                mappings = wf_details.get("issueTypeMappings", {})
+
+                # Build a mapping of issue type name → workflow
+                mapping_resolved = {}
+                for issue_id, wf in mappings.items():
+                    issue_name = issue_types.get(issue_id, {}).get("name", f"Unknown({issue_id})")
+                    mapping_resolved[issue_name] = wf
+                    all_issue_types.add(issue_name)
+
+                project_data.append({
+                    "Project ID": project_id,
+                    "Project Key": project_key,
+                    "Project Name": project_name,
+                    "Workflow Scheme Name": wf_name,
+                    "Default Workflow": default_wf,
+                    "Issue Mappings": mapping_resolved
+                })
+
+    # Prepare CSV with wide format
+    fieldnames = ["Project ID", "Project Key", "Project Name", "Workflow Scheme Name", "Default Workflow"] + sorted(all_issue_types)
+
+    with open("jira_projects_workflows.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for pdata in project_data:
+            row = {
+                "Project ID": pdata["Project ID"],
+                "Project Key": pdata["Project Key"],
+                "Project Name": pdata["Project Name"],
+                "Workflow Scheme Name": pdata["Workflow Scheme Name"],
+                "Default Workflow": pdata["Default Workflow"]
+            }
+
+            # Fill workflow per issue type (leave blank if missing)
+            for itype in all_issue_types:
+                row[itype] = pdata["Issue Mappings"].get(itype, "")
+
+            writer.writerow(row)
+
+    print("CSV file 'jira_projects_workflows.csv' generated successfully.")
+
+
+if __name__ == "__main__":
+    main()
+ 
