@@ -3,9 +3,9 @@ import pandas as pd
 from requests.auth import HTTPBasicAuth
 
 # === CONFIGURATION ===
-email = "mukesh@sprinklr.com"
-api_token = "ATATT3xFfGF082-JvJW_Jof02KVRX3mqa6gWwKzkJaejqvhcGNfQC4ws00V-uxno9RORTwFG_JXXmiHssk2a_Tg-TQhzZefDk-_XRLM3XWVcIWe9NdvT7M52avgD_a0F2n4cPKMzQoXpJnVgldbwnBbAdq2oNUdMO04rAcjlxqqV-eEj3qU9rYQ=774C8366"  # Replace this securely
-domain = "https://sprinklr.atlassian.net"
+email = "EMail"
+api_token = "API token"  # Replace this securely
+domain = "URL"
 
 auth = HTTPBasicAuth(email, api_token)
 headers = {"Accept": "application/json"}
