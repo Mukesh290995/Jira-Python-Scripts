@@ -1,0 +1,100 @@
+import requests
+import pandas as pd
+from requests.auth import HTTPBasicAuth
+
+# === CONFIGURATION ===
+email = "mukesh@sprinklr.com"
+api_token = "ATATT3xFfGF082-JvJW_Jof02KVRX3mqa6gWwKzkJaejqvhcGNfQC4ws00V-uxno9RORTwFG_JXXmiHssk2a_Tg-TQhzZefDk-_XRLM3XWVcIWe9NdvT7M52avgD_a0F2n4cPKMzQoXpJnVgldbwnBbAdq2oNUdMO04rAcjlxqqV-eEj3qU9rYQ=774C8366"  # Replace this securely
+domain = "https://sprinklr.atlassian.net"
+
+auth = HTTPBasicAuth(email, api_token)
+headers = {"Accept": "application/json"}
+
+# === Target Project Keys (based on your original list) ===
+target_project_keys = [
+    "ADV", "AUD", "BMK", "CFM", "COM", "CMU", "CTM", "SPR", "CXM", "CL",
+    "DMP", "DISPLAY", "DST", "HD", "IN", "INTEL", "LE", "LI", "MI", "MOB",
+    "PLAT", "PRIVACY", "PRI", "RL", "SS", "PAID", "CARE", "LST", "SOL", "SPACE", "VL", "VOICE"
+]
+
+# === Data Storage ===
+data = {
+    "Project Key": [],
+    "Project Name": [],
+    "Issue Type Name": [],
+    "Workflow Name": []
+}
+
+# === Step 1: Get All Projects (with pagination) ===
+projects = []
+start_at = 0
+max_results = 50
+
+print("📡 Fetching all projects...")
+while True:
+    paginated_url = f"{domain}/rest/api/3/project/search?startAt={start_at}&maxResults={max_results}"
+    response = requests.get(paginated_url, headers=headers, auth=auth)
+
+    if response.status_code != 200:
+        print(f"❌ Failed to fetch projects at startAt={start_at}")
+        break
+
+    page_data = response.json()
+    projects += page_data.get("values", [])
+
+    if page_data.get("isLast", True):
+        break
+
+    start_at += max_results
+
+# === Step 2: Process Target Projects Only ===
+for project in projects:
+    project_key = project["key"]
+    if project_key not in target_project_keys:
+        continue
+
+    project_id = project["id"]
+    project_name = project["name"]
+    print(f"🔄 Processing project: {project_key} - {project_name}")
+
+    # Step 3: Get issue types for this project
+    issue_type_url = f"{domain}/rest/api/3/issue/createmeta?projectIds={project_id}"
+    issue_type_response = requests.get(issue_type_url, headers=headers, auth=auth)
+    issue_type_map = {}
+
+    if issue_type_response.status_code == 200:
+        project_meta = issue_type_response.json().get("projects", [])
+        if project_meta:
+            for issue_type in project_meta[0].get("issuetypes", []):
+                issue_type_map[issue_type["id"]] = issue_type["name"]
+
+    # Step 4: Get workflow scheme mappings
+    workflow_url = f"{domain}/rest/api/3/workflowscheme/project"
+    query = {"projectId": project_id}
+    response = requests.get(workflow_url, headers=headers, params=query, auth=auth)
+
+    if response.status_code != 200:
+        print(f"❌ Failed to get workflow scheme for {project_key}: {response.status_code}")
+        continue
+
+    values = response.json().get("values", [])
+    for value in values:
+        scheme = value.get("workflowScheme", {})
+        mappings = scheme.get("issueTypeMappings", {})
+        for issue_type_id, workflow_name in mappings.items():
+            issue_type_name = issue_type_map.get(issue_type_id, issue_type_id)
+            data["Project Key"].append(project_key)
+            data["Project Name"].append(project_name)
+            data["Issue Type Name"].append(issue_type_name)
+            data["Workflow Name"].append(workflow_name)
+
+# === Step 5: Save to CSV ===
+df = pd.DataFrame(data)
+df.to_csv("all_project_workflows_with_names.csv", index=False)
+print("✅ Saved workflow data to all_project_workflows_with_names.csv")
+
+# === Optional: Show skipped keys ===
+fetched_keys = [p["key"] for p in projects]
+missing = [k for k in target_project_keys if k not in fetched_keys]
+if missing:
+    print(f"⚠️ These project keys were not found in Jira: {', '.join(missing)}")
