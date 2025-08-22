@@ -1,0 +1,162 @@
+import requests
+import csv
+
+# Jira settings — update with your credentials
+EMAIL = "your-email@example.com"
+API_TOKEN = "your-api-token"
+BASE_URL = "https://sprinklr.atlassian.net/rest/api/3"
+AUTH = (EMAIL, API_TOKEN)
+HEADERS = {"Accept": "application/json"}
+
+
+def get_all_projects():
+    url = BASE_URL + "/project/search"
+    resp = requests.get(url, auth=AUTH, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json().get("values", [])
+
+
+def get_issue_type_screen_scheme(project_id):
+    url = f"{BASE_URL}/issuetypescreenscheme/project?projectId={project_id}"
+    resp = requests.get(url, auth=AUTH, headers=HEADERS)
+    resp.raise_for_status()
+    vals = resp.json().get("values", [])
+    if vals:
+        scheme = vals[0].get("issueTypeScreenScheme", {})
+        sid = scheme.get("id")
+        return sid, scheme.get("name")
+    return None, None
+
+
+def get_mappings(scheme_id):
+    url = f"{BASE_URL}/issuetypescreenscheme/mapping?issueTypeScreenSchemeId={scheme_id}"
+    resp = requests.get(url, auth=AUTH, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json().get("values", [])
+
+
+def get_all_screen_schemes():
+    """Fetch all screen schemes once and return a dict by ID."""
+    url = f"{BASE_URL}/screenscheme"
+    start_at = 0
+    schemes = {}
+    while True:
+        resp = requests.get(
+            url,
+            params={"startAt": start_at, "maxResults": 50},
+            auth=AUTH,
+            headers=HEADERS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for scheme in data.get("values", []):
+            schemes[str(scheme["id"])] = scheme
+        if data.get("isLast", True):
+            break
+        start_at += 50
+    return schemes
+
+
+def get_all_screens():
+    """Fetch all screens once and return dict {id: name}."""
+    url = f"{BASE_URL}/screens"
+    start_at = 0
+    screens = {}
+    while True:
+        resp = requests.get(
+            url,
+            params={"startAt": start_at, "maxResults": 50},
+            auth=AUTH,
+            headers=HEADERS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for scr in data.get("values", []):
+            screens[str(scr["id"])] = scr["name"]
+        if data.get("isLast", True):
+            break
+        start_at += 50
+    return screens
+
+
+def get_all_issue_types():
+    """Fetch all issue types and return dict {id: name}."""
+    url = f"{BASE_URL}/issuetype"
+    resp = requests.get(url, auth=AUTH, headers=HEADERS)
+    resp.raise_for_status()
+    issue_types = {}
+    for itype in resp.json():
+        issue_types[str(itype["id"])] = itype["name"]
+    return issue_types
+
+
+def main():
+    projects = get_all_projects()
+    active_projects = [
+        p
+        for p in projects
+        if p.get("projectCategory", {}).get("name") == "Active Release Projects"
+    ]
+
+    # Cache all schemes, screens, and issue types
+    screen_schemes = get_all_screen_schemes()
+    screens = get_all_screens()
+    issue_types = get_all_issue_types()
+
+    fieldnames = [
+        "Project Name",
+        "Project Key",
+        "Screen Scheme Name",
+        "Issue Type",
+        "Create Screen",
+        "Edit Screen",
+        "View Screen",
+        "Default Screen",
+    ]
+    rows = []
+
+    for proj in active_projects:
+        pid, key, name = proj["id"], proj["key"], proj["name"]
+        scheme_id, scheme_name = get_issue_type_screen_scheme(pid)
+        if not scheme_id:
+            rows.append([name, key, "N/A", "", "", "", "", ""])
+            continue
+
+        mappings = get_mappings(scheme_id)
+        for m in mappings:
+            itype_id = str(m.get("issueTypeId", "default"))
+            itype_name = issue_types.get(itype_id, "Default")
+
+            ssid = str(m.get("screenSchemeId"))
+            scheme = screen_schemes.get(ssid, {})
+            scr = scheme.get("screens", {})
+
+            # Convert screen IDs -> names
+            create_scr = screens.get(str(scr.get("create", "")), "")
+            edit_scr = screens.get(str(scr.get("edit", "")), "")
+            view_scr = screens.get(str(scr.get("view", "")), "")
+            default_scr = screens.get(str(scr.get("default", "")), "")
+
+            rows.append(
+                [
+                    name,
+                    key,
+                    scheme_name,
+                    itype_name,
+                    create_scr,
+                    edit_scr,
+                    view_scr,
+                    default_scr,
+                ]
+            )
+
+    with open("jira_project_screens.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(fieldnames)
+        writer.writerows(rows)
+
+    print("✅ Done. CSV saved as 'jira_project_screens.csv'")
+
+
+if __name__ == "__main__":
+    main()
