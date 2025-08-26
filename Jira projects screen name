@@ -2,18 +2,33 @@ import requests
 import csv
 
 # Jira settings — update with your credentials
-EMAIL = "your-email@example.com"
-API_TOKEN = "your-api-token"
+EMAIL = "Email id"
+API_TOKEN = "API token"
 BASE_URL = "https://sprinklr.atlassian.net/rest/api/3"
 AUTH = (EMAIL, API_TOKEN)
 HEADERS = {"Accept": "application/json"}
 
 
 def get_all_projects():
+    """Fetch all projects with pagination"""
     url = BASE_URL + "/project/search"
-    resp = requests.get(url, auth=AUTH, headers=HEADERS)
-    resp.raise_for_status()
-    return resp.json().get("values", [])
+    start_at = 0
+    projects = []
+    while True:
+        resp = requests.get(
+            url,
+            params={"startAt": start_at, "maxResults": 50},
+            auth=AUTH,
+            headers=HEADERS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        projects.extend(data.get("values", []))
+
+        if data.get("isLast", True):
+            break
+        start_at += 50
+    return projects
 
 
 def get_issue_type_screen_scheme(project_id):
@@ -90,12 +105,11 @@ def get_all_issue_types():
     return issue_types
 
 
-def main():
+def main(project_category="Active Release Projects"):
     projects = get_all_projects()
     active_projects = [
-        p
-        for p in projects
-        if p.get("projectCategory", {}).get("name") == "Active Release Projects"
+        p for p in projects
+        if p.get("projectCategory", {}).get("name") == project_category
     ]
 
     # Cache all schemes, screens, and issue types
@@ -155,7 +169,7 @@ def main():
         writer.writerow(fieldnames)
         writer.writerows(rows)
 
-    print("✅ Done. CSV saved as 'jira_project_screens.csv'")
+    print(f"✅ Done. CSV saved as 'jira_project_screens.csv' with {len(rows)} rows.")
 
 
 if __name__ == "__main__":
