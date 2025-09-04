@@ -1,0 +1,116 @@
+import requests
+import os
+import csv
+
+# Jira credentials (set via env vars or hardcode for testing)
+JIRA_DOMAIN = "https://sprinklr.atlassian.net"
+EMAIL = os.getenv("JIRA_EMAIL", "USER_MAIL")
+API_TOKEN = os.getenv("JIRA_API_TOKEN", "API_TOKEN")
+
+AUTH = (EMAIL, API_TOKEN)
+HEADERS = {"Accept": "application/json"}
+
+OUTPUT_FILE = "jira_projects.csv"
+
+
+def get_all_projects():
+    """Fetch all Jira projects with pagination."""
+    projects = []
+    url = f"{JIRA_DOMAIN}/rest/api/3/project/search"
+
+    while url:
+        response = requests.get(url, headers=HEADERS, auth=AUTH)
+        response.raise_for_status()
+        data = response.json()
+
+        projects.extend(data.get("values", []))
+        url = data.get("nextPage")  # continue pagination if nextPage exists
+
+    return projects
+
+
+def get_scheme(project_id, scheme_type):
+    """Fetch scheme details by type for a project."""
+    endpoints = {
+        "issue_type": f"{JIRA_DOMAIN}/rest/api/3/issuetypescheme/project?projectId={project_id}",
+        "screen_scheme": f"{JIRA_DOMAIN}/rest/api/3/issuetypescreenscheme/project?projectId={project_id}",
+        "workflow_scheme": f"{JIRA_DOMAIN}/rest/api/3/workflowscheme/project?projectId={project_id}",
+        "field_config": f"{JIRA_DOMAIN}/rest/api/3/fieldconfigurationscheme/project?projectId={project_id}",
+    }
+
+    url = endpoints[scheme_type]
+    response = requests.get(url, headers=HEADERS, auth=AUTH)
+    if response.status_code == 200:
+        data = response.json()
+        values = data.get("values", [])
+
+        if not values:
+            return "N/A"
+
+        obj = values[0]  # each project should only map to one scheme
+
+        if scheme_type == "issue_type":
+            return obj.get("issueTypeScheme", {}).get("name", "N/A")
+        elif scheme_type == "screen_scheme":
+            return obj.get("issueTypeScreenScheme", {}).get("name", "N/A")
+        elif scheme_type == "workflow_scheme":
+            return obj.get("workflowScheme", {}).get("name", "N/A")
+        elif scheme_type == "field_config":
+            return obj.get("fieldConfigurationScheme", {}).get("name", "N/A")
+
+    print(f"⚠️ Failed fetching {scheme_type} for project {project_id}: {response.status_code}")
+    return "N/A"
+
+
+def main():
+    print("Fetching projects...")
+    projects = get_all_projects()
+
+    rows = []
+    for proj in projects:
+        category = proj.get("projectCategory", {}).get("name", "")
+
+        if category == "Active Release Projects":
+            project_id = proj.get("id")
+            project_name = proj.get("name")
+            project_key = proj.get("key")
+
+            print(f"✅ Processing project: {project_name} ({project_key})")
+
+            issue_type_scheme = get_scheme(project_id, "issue_type")
+            screen_scheme = get_scheme(project_id, "screen_scheme")
+            workflow_scheme = get_scheme(project_id, "workflow_scheme")
+            field_config_scheme = get_scheme(project_id, "field_config")
+
+            rows.append([
+                project_name,
+                project_key,
+                project_id,
+                category,
+                issue_type_scheme,
+                screen_scheme,
+                workflow_scheme,
+                field_config_scheme,
+            ])
+
+    # Write to CSV
+    with open(OUTPUT_FILE, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "Project Name",
+            "Project Key",
+            "Project ID",
+            "Project Category",
+            "Issue Type Scheme",
+            "Issue Type Screen Scheme",
+            "Workflow Scheme",
+            "Field Configuration Scheme",
+        ])
+        writer.writerows(rows)
+
+    print(f"✅ Data saved to {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
+ 
